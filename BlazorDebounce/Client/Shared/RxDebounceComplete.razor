@@ -1,0 +1,127 @@
+﻿@using System.Linq
+@using System.Reactive
+@using System.Reactive.Concurrency
+@using System.Reactive.Linq
+@using System.Threading
+
+@inject HttpClient Http
+
+<CompletionTemplate Calls="@calls"
+                    TotalItemsFetched="@totalItems"
+                    Reset="() => Reset()"
+                    @bind-Text="@Text"
+                    FoodItems="@foodItems" />
+
+@code {
+    private string text;
+    private FoodItem[] foodItems = new FoodItem[0];
+    private int calls;
+    private int totalItems;
+
+    private event EventHandler<string> TextUpdated;
+
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+
+        Observable
+            .FromEventPattern<EventHandler<string>, string>(
+                x => this.TextUpdated += x,
+                x => this.TextUpdated -= x)
+            .Select(x => x.EventArgs)
+            .Do(txt => Console.WriteLine($"Text Searched: {txt}"))
+            .DistinctUntilChanged()
+
+
+            // Select the values asynchronously
+            .SelectMany(txt => Http.GetFromJsonAsync<FoodItem[]>($"/api/foods?text={txt}"))
+
+            // Delay the execution of the observable or don't call the api, if there is no text
+            // Cancel the previous observable, when a new one is sent in
+            //.Select(txt =>
+            //    !string.IsNullOrEmpty(txt)
+            //        ? Observable.FromAsync(ct => Http.GetFromJsonAsync<FoodItem[]>($"/api/foods?text={txt}", ct))
+            //        : Observable.Return(new FoodItem[0]))
+            //.Switch()
+
+            // Delay the execution of the observable or don't call the api, if there is no text
+            // Do all the requests sequentially
+            //.Select(txt =>
+            //    !string.IsNullOrEmpty(txt)
+            //        ? Observable.FromAsync(ct => Http.GetFromJsonAsync<FoodItem[]>($"/api/foods?text={txt}", ct))
+            //        : Observable.Return(new FoodItem[0]))
+            //.Concat()
+
+            // Delay the execution of the observable or don't call the api, if there is no text
+            // Do all the requests many at a time
+            //.Select(txt =>
+            //    !string.IsNullOrEmpty(txt)
+            //        ? Observable.FromAsync(ct => Http.GetFromJsonAsync<FoodItem[]>($"/api/foods?text={txt}", ct))
+            //        : Observable.Return(new FoodItem[0]))
+            //.Merge(5) // Control how many at a time
+
+
+            // throttle the input
+            // Delay the execution of the observable or don't call the api, if there is no text
+            // Cancel the previous observable, when a new one is sent in
+            //.Throttle(TimeSpan.FromMilliseconds(300))
+            //.Select(txt =>
+            //    !string.IsNullOrEmpty(txt)
+            //        ? Observable.FromAsync(ct => Http.GetFromJsonAsync<FoodItem[]>($"/api/foods?text={txt}", ct))
+            //        : Observable.Return(new FoodItem[0]))
+            //.Switch()
+
+            .Do(
+                foodResult =>
+                {
+                    foodItems = foodResult;
+                    totalItems += foodResult?.Length ?? 0;
+                    calls++;
+                })
+
+            //Update the UI - Option 1
+            .SelectMany(
+                async _ =>
+                {
+                    await InvokeAsync(StateHasChanged);
+                    return Unit.Default;
+                })
+
+            //Update the UI - Option 2
+            //.Select(
+            //    _ =>
+            //        Observable
+            //            .FromAsync(
+            //                async ct =>
+            //                {
+            //                    if (!ct.IsCancellationRequested)
+            //                    {
+            //                        await InvokeAsync(StateHasChanged);
+            //                    }
+            //                }))
+            //.Switch()
+
+            .Subscribe();
+    }
+
+    private string Text
+    {
+        get => text;
+        set
+        {
+            if (value != text)
+            {
+                text = value;
+                TextUpdated?.Invoke(this, value);
+            }
+        }
+    }
+
+    private void Reset()
+    {
+        calls = 0;
+        totalItems = 0;
+        Text = string.Empty;
+    }
+
+}
